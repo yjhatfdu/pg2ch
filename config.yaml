@@ -1,0 +1,27 @@
+tables:
+  public.testdc:
+    main_table: testdc
+    buffer_table: testdc_buf
+    engine: MergeTreeWithMutation
+    init_sync_skip_buffer_table: true
+    max_buffer_length: 200000
+    merge_threshold: 100
+
+inactivity_merge_timeout: '30 s'
+
+clickhouse: # clickhouse tcp protocol connection params
+  host: 172.16.1.18
+  password: 123456789
+  port: 9000
+  database: default
+  username: default
+  block_size: 10000
+
+postgres: # postgresql connection params
+  host: 127.0.0.1
+  port: 5432
+  database: postgres
+  replication_slot_name: pg2ch_test_slot
+  publication_name: pg2ch_pub
+
+db_path: db

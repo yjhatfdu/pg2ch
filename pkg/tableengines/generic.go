@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -421,6 +422,11 @@ func (t *genericTable) FlushToMainTable() error {
 	return nil
 }
 
+var factors10 = []int64{
+	1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13,
+	1e14, 1e15, 1e16, 1e17, 1e18,
+}
+
 func convert(val string, chType config.ChColumn, pgType config.PgColumn) (interface{}, error) {
 	switch chType.BaseType {
 	case utils.ChInt8:
@@ -459,7 +465,25 @@ func convert(val string, chType config.ChColumn, pgType config.PgColumn) (interf
 	case utils.ChFloat32:
 		return strconv.ParseFloat(val, 32)
 	case utils.ChDecimal:
-		return strconv.ParseFloat(val, 64)
+		segs := strings.Split(val, ".")
+		if len(segs) == 1 {
+			vi, err := strconv.ParseInt(segs[0], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			return vi * 10000, nil
+		} else if len(segs) == 2 {
+			lfrac := len(segs[1])
+			v := strings.Replace(val, ".", "", 1)
+			vi, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+
+			return vi * factors10[4-lfrac], nil
+		} else {
+			return nil, errors.New("invalid numeric: " + val)
+		}
 	case utils.ChFloat64:
 		return strconv.ParseFloat(val, 64)
 	case utils.ChFixedString:
@@ -469,7 +493,10 @@ func convert(val string, chType config.ChColumn, pgType config.PgColumn) (interf
 	case utils.ChDate:
 		return time.Parse("2006-01-02", val[:10])
 	case utils.ChDateTime:
-		return time.Parse("2006-01-02 15:04:05", val[:19])
+		if len(val) == 29 {
+			return time.Parse("2006-01-02 15:04:05.999999999Z07", val)
+		}
+		return time.ParseInLocation("2006-01-02 15:04:05", val[:19], time.Local)
 	case utils.ChUUID:
 		return val, nil
 	}

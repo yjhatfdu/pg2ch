@@ -49,8 +49,9 @@ type Replicator struct {
 	cfg      config.Config
 	errCh    chan error
 
-	pgConn *pgx.Conn
-	chConn *sql.DB
+	pgConn         *pgx.Conn
+	chConn         *sql.DB
+	chClusterConns []*sql.DB
 
 	persStorage *diskv.Diskv
 
@@ -103,6 +104,12 @@ func (r *Replicator) newTable(tblName config.PgTableName, tblConfig config.Table
 		return tableengines.NewCollapsingMergeTree(r.ctx, r.chConn, tblConfig, &r.generationID), nil
 	case config.MergeTree:
 		return tableengines.NewMergeTree(r.ctx, r.chConn, tblConfig, &r.generationID), nil
+	case config.MergeTreeWithMutation:
+		return tableengines.NewMergeTreeMutations(r.ctx, r.chConn, tblConfig, &r.generationID, r.chClusterConns, func() error {
+			return r.mergeTables()
+		}, func(key string, val []byte) error {
+			return r.persStorage.Write(key, val)
+		}), nil
 	}
 
 	return nil, fmt.Errorf("%s table engine is not implemented", tblConfig.Engine)
@@ -515,7 +522,23 @@ func (r *Replicator) chConnect() error {
 
 		return fmt.Errorf("could not ping: %v", err)
 	}
+	if len(r.cfg.DistributedServers) > 0 {
+		r.chClusterConns = make([]*sql.DB, len(r.cfg.DistributedServers))
+		for i := 0; i < len(r.chClusterConns); i++ {
+			conn, err := sql.Open("clickhouse", r.cfg.DistributedServers[i].ConnectionString())
+			if err != nil {
+				log.Fatal(err)
+			}
+			if err := conn.Ping(); err != nil {
+				if exception, ok := err.(*clickhouse.Exception); ok {
+					return fmt.Errorf("[%d] %s %s", exception.Code, exception.Message, exception.StackTrace)
+				}
 
+				return fmt.Errorf("could not ping: %v", err)
+			}
+			r.chClusterConns[i] = conn
+		}
+	}
 	return nil
 }
 
@@ -631,6 +654,10 @@ func (r *Replicator) getTable(oid utils.OID) (config.PgTableName, clickHouseTabl
 	}
 
 	return tblName, chTbl
+}
+
+func (r *Replicator) ForceMergeTables() error {
+	return r.mergeTables()
 }
 
 func (r *Replicator) mergeTables() error {

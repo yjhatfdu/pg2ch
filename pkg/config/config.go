@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,12 +40,16 @@ const (
 
 	//MergeTree represents MergeTree table engine
 	MergeTree
+
+	//MergeTreeWithMutation represents MergeTree table engine using mutations for update and delete support
+	MergeTreeWithMutation
 )
 
 var tableEngines = map[tableEngine]string{
-	CollapsingMergeTree: "CollapsingMergeTree",
-	ReplacingMergeTree:  "ReplacingMergeTree",
-	MergeTree:           "MergeTree",
+	CollapsingMergeTree:   "CollapsingMergeTree",
+	ReplacingMergeTree:    "ReplacingMergeTree",
+	MergeTree:             "MergeTree",
+	MergeTreeWithMutation: "MergeTreeWithMutation",
 }
 
 type pgConnConfig struct {
@@ -76,6 +81,8 @@ type Table struct {
 	InitSyncSkipBufferTable bool              `yaml:"init_sync_skip_buffer_table"`
 	InitSyncSkipTruncate    bool              `yaml:"init_sync_skip_truncate"`
 	Columns                 map[string]string `yaml:"columns"`
+	IsDistributed           bool              `yaml:"is_distributed"`
+	ChPartTable             string            `yaml:"part_table"`
 
 	PgTableName   PgTableName         `yaml:"-"`
 	TupleColumns  []message.Column    `yaml:"-"` // columns in the order they are in the table
@@ -84,12 +91,13 @@ type Table struct {
 }
 
 type chConnConfig struct {
-	Host     string            `yaml:"host"`
-	Port     uint32            `yaml:"port"`
-	Database string            `yaml:"database"`
-	User     string            `yaml:"username"`
-	Password string            `yaml:"password"`
-	Params   map[string]string `yaml:"params"`
+	Host      string            `yaml:"host"`
+	Port      uint32            `yaml:"port"`
+	Database  string            `yaml:"database"`
+	User      string            `yaml:"username"`
+	Password  string            `yaml:"password"`
+	Params    map[string]string `yaml:"params"`
+	BlockSize uint32            `yaml:"block_size"`
 }
 
 // Config contains config
@@ -100,6 +108,7 @@ type Config struct {
 	InactivityFlushTimeout time.Duration         `yaml:"inactivity_flush_timeout"`
 	PersStoragePath        string                `yaml:"db_path"`
 	RedisBind              string                `yaml:"redis_bind"`
+	DistributedServers     []chConnConfig        `yaml:"distributed_servers"`
 }
 
 type Column struct {
@@ -289,6 +298,7 @@ func (c *chConnConfig) ConnectionString() string {
 	connStr.Add("username", c.User)
 	connStr.Add("password", c.Password)
 	connStr.Add("database", c.Database)
+	connStr.Add("block_size", strconv.Itoa(int(c.BlockSize)))
 
 	for param, value := range c.Params {
 		connStr.Add(param, value)

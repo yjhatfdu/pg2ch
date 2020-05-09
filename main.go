@@ -13,14 +13,14 @@ import (
 var (
 	configFile    = flag.String("config", "config.yaml", "path to the config file")
 	generateChDDL = flag.Bool("generate-ch-ddl", false, "generates clickhouse's tables ddl")
-	Version       = "devel"
-	Revision      = "devel"
+	Version       = "synyi-1.0.0"
+	Revision      = "0"
 
 	GoVersion = runtime.Version()
 )
 
 func buildInfo() string {
-	return fmt.Sprintf("Postgresql to Clickhouse replicator %s git revision %s go version %s", Version, Revision, GoVersion)
+	return fmt.Sprintf("Postgresql to Clickhouse replicator %s  go version %s", Version, GoVersion)
 }
 
 func init() {
