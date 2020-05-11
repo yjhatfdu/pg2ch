@@ -132,7 +132,7 @@ func (t *mergeTreeMutationsTable) Delete(lsn utils.LSN, old message.Row) (bool, 
 	if t.cfg.IsDistributed {
 		query := fmt.Sprintf(`ALTER TABLE %s DELETE WHERE %s=?`, t.cfg.ChPartTable, t.tupleColumns[t.keyColIndex].Name)
 		for _, conn := range t.distributedServers {
-			_, err = conn.Exec(query, append(tuples, pkey)...)
+			_, err = conn.Exec(query, pkey)
 			if err != nil {
 				return false, err
 			}
