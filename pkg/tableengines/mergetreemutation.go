@@ -10,6 +10,7 @@ import (
 	"github.com/mkabilov/pg2ch/pkg/utils"
 	"log"
 	"strings"
+	"time"
 )
 
 const tableLSNKeyPrefix = "table_lsn_"
@@ -98,6 +99,8 @@ func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (b
 	}
 
 	if t.cfg.IsDistributed {
+		//wait for distributed table send 100ms
+		time.Sleep(120 * time.Millisecond)
 		query := fmt.Sprintf(`ALTER TABLE %s UPDATE %s WHERE %s=?`, t.cfg.ChPartTable, strings.Join(updateClauses, ","),
 			t.tupleColumns[t.keyColIndex].Name)
 		for _, conn := range t.distributedServers {
@@ -130,6 +133,8 @@ func (t *mergeTreeMutationsTable) Delete(lsn utils.LSN, old message.Row) (bool, 
 	tuples := t.convertTuples(old)
 	pkey := tuples[t.keyColIndex]
 	if t.cfg.IsDistributed {
+		//wait for distributed table send 100ms
+		time.Sleep(120 * time.Millisecond)
 		query := fmt.Sprintf(`ALTER TABLE %s DELETE WHERE %s=?`, t.cfg.ChPartTable, t.tupleColumns[t.keyColIndex].Name)
 		for _, conn := range t.distributedServers {
 			_, err = conn.Exec(query, pkey)
