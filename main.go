@@ -13,7 +13,7 @@ import (
 var (
 	configFile    = flag.String("config", "config.yaml", "path to the config file")
 	generateChDDL = flag.Bool("generate-ch-ddl", false, "generates clickhouse's tables ddl")
-	Version       = "synyi-1.1.1"
+	Version       = "synyi-1.1.2"
 
 	GoVersion = runtime.Version()
 )
