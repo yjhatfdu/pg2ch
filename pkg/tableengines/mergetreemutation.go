@@ -94,8 +94,14 @@ func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (b
 	copy(colsWithoutKey[0:t.keyColIndex], t.tupleColumns[0:t.keyColIndex])
 	copy(colsWithoutKey[t.keyColIndex:], t.tupleColumns[t.keyColIndex+1:])
 	updateClauses := make([]string, len(colsWithoutKey))
+	tuplesWithoutNull := make([]interface{}, 0)
 	for i, c := range colsWithoutKey {
-		updateClauses[i] = c.Name + "=?"
+		if tuplesWithoutKey[i] == nil {
+			updateClauses[i] = c.Name + "=NULL"
+		} else {
+			updateClauses[i] = c.Name + "=?"
+			tuplesWithoutNull = append(tuplesWithoutNull, tuplesWithoutKey[i])
+		}
 	}
 
 	if t.cfg.IsDistributed {
@@ -104,7 +110,7 @@ func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (b
 		query := fmt.Sprintf(`ALTER TABLE %s UPDATE %s WHERE %s=?`, t.cfg.ChPartTable, strings.Join(updateClauses, ","),
 			t.tupleColumns[t.keyColIndex].Name)
 		for _, conn := range t.distributedServers {
-			_, err = conn.Exec(query, append(tuplesWithoutKey, pkey)...)
+			_, err = conn.Exec(query, append(tuplesWithoutNull, pkey)...)
 			if err != nil {
 				return false, err
 			}
@@ -112,7 +118,7 @@ func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (b
 	} else {
 		query := fmt.Sprintf(`ALTER TABLE %s UPDATE %s WHERE %s=?`, t.cfg.ChMainTable, strings.Join(updateClauses, ","),
 			t.tupleColumns[t.keyColIndex].Name)
-		_, err = t.chConn.Exec(query, append(tuplesWithoutKey, pkey)...)
+		_, err = t.chConn.Exec(query, append(tuplesWithoutNull, pkey)...)
 		if err != nil {
 			return false, err
 		}
