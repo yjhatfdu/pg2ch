@@ -19,6 +19,7 @@ type mergeTreeMutationsTable struct {
 	genericTable
 	distributedServers []*sql.DB
 	keyColIndex        int
+	partitionColIndex  int
 	mergeFunc          func() error
 	persistStoreFunc   func(key string, val []byte) error
 }
@@ -34,10 +35,13 @@ func NewMergeTreeMutations(ctx context.Context, conn *sql.DB, tblCfg config.Tabl
 		mergeFunc:          mergeFunc,
 		persistStoreFunc:   persistStoreFunc,
 	}
+	t.partitionColIndex = -1
 	for i, col := range t.tupleColumns {
 		if col.IsKey {
 			t.keyColIndex = i
-			break
+		}
+		if col.Name == t.cfg.PartitionKey {
+			t.partitionColIndex = i
 		}
 	}
 	if t.cfg.ChBufferTable == "" {
@@ -93,13 +97,16 @@ func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (b
 	colsWithoutKey := make([]message.Column, len(tuples)-1)
 	copy(colsWithoutKey[0:t.keyColIndex], t.tupleColumns[0:t.keyColIndex])
 	copy(colsWithoutKey[t.keyColIndex:], t.tupleColumns[t.keyColIndex+1:])
-	updateClauses := make([]string, len(colsWithoutKey))
+	updateClauses := make([]string, 0)
 	tuplesWithoutNull := make([]interface{}, 0)
 	for i, c := range colsWithoutKey {
+		if i == t.partitionColIndex {
+			continue
+		}
 		if tuplesWithoutKey[i] == nil {
-			updateClauses[i] = c.Name + "=NULL"
+			updateClauses = append(updateClauses, c.Name+"=NULL")
 		} else {
-			updateClauses[i] = c.Name + "=?"
+			updateClauses = append(updateClauses, c.Name+"=?")
 			tuplesWithoutNull = append(tuplesWithoutNull, tuplesWithoutKey[i])
 		}
 	}

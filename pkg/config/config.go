@@ -83,6 +83,7 @@ type Table struct {
 	Columns                 map[string]string `yaml:"columns"`
 	IsDistributed           bool              `yaml:"is_distributed"`
 	ChPartTable             string            `yaml:"part_table"`
+	PartitionKey            string            `yaml:"partition_key"`
 
 	PgTableName   PgTableName         `yaml:"-"`
 	TupleColumns  []message.Column    `yaml:"-"` // columns in the order they are in the table

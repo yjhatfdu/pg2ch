@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 
@@ -13,7 +14,7 @@ import (
 var (
 	configFile    = flag.String("config", "config.yaml", "path to the config file")
 	generateChDDL = flag.Bool("generate-ch-ddl", false, "generates clickhouse's tables ddl")
-	Version       = "synyi-1.1.2"
+	Version       = "synyi-1.1.3"
 
 	GoVersion = runtime.Version()
 )
@@ -28,7 +29,7 @@ func init() {
 		fmt.Fprintf(os.Stderr, "\nUsage:\n")
 		flag.PrintDefaults()
 	}
-
+		net.Dial()
 	flag.Parse()
 
 	if *configFile == "" {
