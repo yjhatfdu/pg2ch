@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"runtime"
 
@@ -29,7 +28,6 @@ func init() {
 		fmt.Fprintf(os.Stderr, "\nUsage:\n")
 		flag.PrintDefaults()
 	}
-		net.Dial()
 	flag.Parse()
 
 	if *configFile == "" {
