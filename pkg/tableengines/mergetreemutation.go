@@ -9,6 +9,7 @@ import (
 	"github.com/mkabilov/pg2ch/pkg/message"
 	"github.com/mkabilov/pg2ch/pkg/utils"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -79,6 +80,108 @@ func (t *mergeTreeMutationsTable) Write(p []byte) (int, error) {
 func (t *mergeTreeMutationsTable) Insert(lsn utils.LSN, new message.Row) (bool, error) {
 	return t.processCommandSet(commandSet{t.convertTuples(new)})
 }
+func (t *genericTable) convertTuplesForUpdate(row message.Row) []interface{} {
+	var err error
+	res := make([]interface{}, 0)
+
+	for colId, col := range t.tupleColumns {
+		var val interface{}
+		if _, ok := t.columnMapping[col.Name]; !ok {
+			continue
+		}
+
+		if row[colId].Kind != message.TupleNull {
+			val, err = convertForUpdate(string(row[colId].Value), t.columnMapping[col.Name], t.cfg.PgColumns[col.Name])
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		res = append(res, val)
+	}
+	if t.cfg.GenerationColumn != "" {
+		res = append(res, uint32(*t.generationID))
+	}
+
+	return res
+}
+func convertForUpdate(val string, chType config.ChColumn, pgType config.PgColumn) (interface{}, error) {
+	switch chType.BaseType {
+	case utils.ChInt8:
+		return strconv.ParseInt(val, 10, 8)
+	case utils.ChInt16:
+		return strconv.ParseInt(val, 10, 16)
+	case utils.ChInt32:
+		return strconv.ParseInt(val, 10, 32)
+	case utils.ChInt64:
+		return strconv.ParseInt(val, 10, 64)
+	case utils.ChUInt8:
+		if pgType.BaseType == utils.PgBoolean {
+			if val == pgTrue {
+				return 1, nil
+			} else if val == pgFalse {
+				return 0, nil
+			}
+		}
+
+		return nil, fmt.Errorf("can't convert %v to %v", pgType.BaseType, chType.BaseType)
+	case utils.ChUInt16:
+		return strconv.ParseUint(val, 10, 16)
+	case utils.ChUint32:
+		if pgType.BaseType == utils.PgTimeWithoutTimeZone {
+			t, err := time.Parse("15:04:05", val)
+			if err != nil {
+				return nil, err
+			}
+
+			return t.Hour()*3600 + t.Minute()*60 + t.Second(), nil
+		}
+
+		return strconv.ParseUint(val, 10, 32)
+	case utils.ChUint64:
+		return strconv.ParseUint(val, 10, 64)
+	case utils.ChFloat32:
+		return strconv.ParseFloat(val, 32)
+	case utils.ChDecimal:
+		//segs := strings.Split(val, ".")
+		//		//if len(segs) == 1 {
+		//		//	vi, err := strconv.ParseInt(segs[0], 10, 64)
+		//		//	if err != nil {
+		//		//		return nil, err
+		//		//	}
+		//		//	return vi * 10000, nil
+		//		//} else if len(segs) == 2 {
+		//		//	lfrac := len(segs[1])
+		//		//	v := strings.Replace(val, ".", "", 1)
+		//		//	vi, err := strconv.ParseInt(v, 10, 64)
+		//		//	if err != nil {
+		//		//		return nil, err
+		//		//	}
+		//		//
+		//		//	return vi * factors10[4-lfrac], nil
+		//		//} else {
+		//		//	return nil, errors.New("invalid numeric: " + val)
+		//		//}
+		return fmt.Sprintf(`toDecimal64('%s',4)`, val), nil
+	case utils.ChFloat64:
+		return strconv.ParseFloat(val, 64)
+	case utils.ChFixedString:
+		fallthrough
+	case utils.ChString:
+		return val, nil
+	case utils.ChDate:
+		return time.Parse("2006-01-02", val[:10])
+	case utils.ChDateTime:
+		if len(val) == 29 {
+			return time.Parse("2006-01-02 15:04:05.999999999Z07", val)
+		}
+		return time.ParseInLocation("2006-01-02 15:04:05", val[:19], time.Local)
+	case utils.ChUUID:
+		return val, nil
+	}
+
+	return nil, fmt.Errorf("unknown type: %v", chType)
+}
 
 // Update handles incoming update DML operation
 func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (bool, error) {
@@ -89,7 +192,7 @@ func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (b
 	if err != nil {
 		return false, err
 	}
-	tuples := t.convertTuples(new)
+	tuples := t.convertTuplesForUpdate(new)
 	pkey := tuples[t.keyColIndex]
 	tuplesWithoutKey := make([]interface{}, len(tuples)-1)
 	copy(tuplesWithoutKey[0:t.keyColIndex], tuples[0:t.keyColIndex])
@@ -100,17 +203,22 @@ func (t *mergeTreeMutationsTable) Update(lsn utils.LSN, old, new message.Row) (b
 	updateClauses := make([]string, 0)
 	tuplesWithoutNull := make([]interface{}, 0)
 	for i, c := range colsWithoutKey {
-		if i == t.partitionColIndex {
+		var partitionColIndex = t.partitionColIndex
+		if partitionColIndex > t.keyColIndex {
+			partitionColIndex--
+		}
+		if i == partitionColIndex {
 			continue
 		}
 		if tuplesWithoutKey[i] == nil {
 			updateClauses = append(updateClauses, c.Name+"=NULL")
+		} else if t.columnMapping[ c.Name].BaseType == utils.ChDecimal {
+			updateClauses = append(updateClauses, c.Name+"="+tuplesWithoutKey[i].(string))
 		} else {
 			updateClauses = append(updateClauses, c.Name+"=?")
 			tuplesWithoutNull = append(tuplesWithoutNull, tuplesWithoutKey[i])
 		}
 	}
-
 	if t.cfg.IsDistributed {
 		//wait for distributed table send 100ms
 		time.Sleep(120 * time.Millisecond)

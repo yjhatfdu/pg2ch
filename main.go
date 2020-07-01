@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/mkabilov/pg2ch/pkg/pg2ch_init"
+	"log"
 	"os"
 	"runtime"
 
@@ -11,9 +13,12 @@ import (
 )
 
 var (
-	configFile    = flag.String("config", "config.yaml", "path to the config file")
-	generateChDDL = flag.Bool("generate-ch-ddl", false, "generates clickhouse's tables ddl")
-	Version       = "synyi-1.1.3"
+	configFile = flag.String("config", "config.yaml", "path to the config file")
+	//generateChDDL = flag.Bool("generate-ch-ddl", false, "generates clickhouse's tables ddl")
+	initConf = flag.String("init", "", "path to your init config file")
+	dryRun   = flag.Bool("dry-run", false, "init only print to stdout")
+	quite    = flag.Bool("q", false, "do not print statements")
+	Version  = "synyi-1.2.0"
 
 	GoVersion = runtime.Version()
 )
@@ -44,11 +49,14 @@ func main() {
 	}
 
 	repl := replicator.New(*cfg)
-	if *generateChDDL {
-		if err := repl.GenerateChDDL(); err != nil {
-			fmt.Fprintf(os.Stderr, "could not create tables on the clickhouse side: %v\n", err)
-			os.Exit(1)
-		}
+	if initConf != nil && *initConf != "" {
+		defer func() {
+			err := recover()
+			if err != nil {
+				log.Println(err)
+			}
+		}()
+		pg2ch_init.Pg2chInit(*initConf, *dryRun, *quite)
 	} else {
 		if err := repl.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "could not start: %v\n", err)
