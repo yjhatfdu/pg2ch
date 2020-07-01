@@ -18,7 +18,7 @@ var (
 	initConf = flag.String("init", "", "path to your init config file")
 	dryRun   = flag.Bool("dry-run", false, "init only print to stdout")
 	quite    = flag.Bool("q", false, "do not print statements")
-	Version  = "synyi-1.2.0"
+	Version  = "synyi-1.2.1"
 
 	GoVersion = runtime.Version()
 )
@@ -48,7 +48,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	repl := replicator.New(*cfg)
 	if initConf != nil && *initConf != "" {
 		defer func() {
 			err := recover()
@@ -58,6 +57,7 @@ func main() {
 		}()
 		pg2ch_init.Pg2chInit(*initConf, *dryRun, *quite)
 	} else {
+		repl := replicator.New(*cfg)
 		if err := repl.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "could not start: %v\n", err)
 			os.Exit(1)
